@@ -46,7 +46,7 @@ node app/server.mjs
 
 ### 桌面软件
 
-1. 下载 GitHub Releases 中的 `video_to_3d_studio-v0.5.1.zip` 并解压。
+1. 下载 GitHub Releases 中的 `video_to_3d_studio-v0.5.2.zip` 并解压。
 2. 安装 Node.js 22+、FFmpeg/FFprobe、COLMAP 和支持 CLI 的 Brush。
 3. 双击 `app/start_video_to_3d.bat`，在页面中选择“本地 COLMAP + Brush（免 Blender）”。
 4. 在页面中填写 `colmap`、`brush`，或填写两个可执行文件的完整路径。
@@ -133,4 +133,4 @@ node app/server.mjs
 
 ## 版本
 
-当前软件发布版本：`v0.5.1`；Blender 插件版本：`v0.2.0`。
+当前软件发布版本：`v0.5.2`；Blender 插件版本：`v0.2.0`。
