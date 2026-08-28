@@ -1,14 +1,14 @@
 # VideoTo3D Studio：视频转 3D 模型
 
-一个中文视频转 3D 工作台：从视频中抽取关键帧，调用可配置的外部 AI 模型进行物体分析，并在 Blender 中生成可继续编辑的 3D 模型，最后输出 `.blend` 或 `.glb` 等格式。仓库同时包含桌面软件 MVP 和 Blender 插件。
+一个中文视频转 3D 工作台：从视频中抽取关键帧，使用本地 `FFmpeg/FFprobe + COLMAP + Brush` 完成相机重建和 Gaussian Splatting 训练，直接输出 `final.ply`；仓库同时包含桌面软件 MVP 和 Blender 兼容插件。
 
 > 当前版本是“AI 分析 + 程序化可编辑模型”的工作流，适合快速获得物体的主要外形。它不是完整的摄影测量或 3D Gaussian Splatting 引擎。
 
 ## 桌面软件（推荐入口）
 
-`app/` 是一个无需安装 npm 依赖的本地桌面工作台，采用 OOOSplat 风格的项目化流程：新建项目、抽帧、AI 分析、Blender 重建、导出和查看日志。它可以处理手表、产品、家具、零件等一般物体，不局限于视频中的手表。
+`app/` 是一个无需安装 npm 依赖的本地桌面工作台，采用 OOOSplat 风格的项目化流程：新建项目、抽帧、COLMAP 相机重建、Brush 训练、导出和查看日志。默认模式是本地 Gaussian Splatting，不需要 Blender；Hunyuan3D 网格和 Blender 仅作为可选引擎。它可以处理手表、产品、家具、零件等一般物体，不局限于视频中的手表。
 
-启动要求：Windows、Node.js 22+、Blender 5.2+、FFmpeg/FFprobe。双击 `app/start_video_to_3d.bat`，或在终端执行：
+启动要求：Windows、Node.js 22+、FFmpeg/FFprobe、COLMAP 和支持 CLI 的 Brush；推荐使用可用 GPU。双击 `app/start_video_to_3d.bat`，或在终端执行：
 
 ```powershell
 node app/server.mjs
@@ -16,19 +16,20 @@ node app/server.mjs
 
 软件会打开本机页面 `http://127.0.0.1:43120`。设置保存在 `%LOCALAPPDATA%\\VideoTo3DStudio\\settings.json`；只有用户主动勾选保存密钥时才保存密钥，仓库和发布包不含任何 API 密钥。完整说明见 [app/README.md](app/README.md)。
 
-软件支持 `/v1/models` 和 `/v1/chat/completions`，可填写 API 地址、密钥和模型名称；地址会自动规范到 `/v1`。每个项目会保存视频信息、关键帧、AI 建模参数、状态、日志以及 `.blend`/`.glb` 等输出，默认输出到 Windows `下载` 文件夹。
+本地主流程执行 `FFmpeg/FFprobe → COLMAP → Brush`，每个项目保存视频信息、关键帧、COLMAP 数据、Brush 中间结果、状态、日志以及 `outputs/final.ply`，默认输出到 Windows `下载` 文件夹。另有本地 Hunyuan3D `/generate` 网格模式，以及 Blender 兼容模式。
 
 ## 功能
 
 - 中文界面，支持 Blender 5.2 LTS。
 - 从视频自动抽取关键帧，可选择快速、均衡、精细三档质量。
+- 默认本地执行 FFmpeg/FFprobe、COLMAP 和 Brush，输出 Gaussian Splatting `final.ply`，不需要 Blender。
 - 支持聊天兼容接口：`/v1/models` 读取模型列表，`/v1/chat/completions` 调用模型。
 - 支持视频上传接口，以及 Bearer、`X-API-Key`、无密钥三种认证方式。
 - API 地址、模型名称和密钥由 Blender 用户偏好管理，不写入 `.blend` 项目文件，也不写入本仓库。
 - 建模过程显示百分比、当前阶段、计数、耗时和实时日志。
 - 每次任务创建独立项目目录，保存关键帧、状态、日志、分析结果和输出模型。
 - 默认输出位置为 Windows 用户的 `下载` 文件夹，例如 `C:\Users\你的用户名\Downloads`。
-- 支持输出 GLB、glTF、OBJ、FBX，并可在完成后自动导入 Blender。
+- 可选输出 GLB、glTF、OBJ、FBX；Gaussian Splatting 主流程输出 `final.ply`。
 
 ## 界面预览
 
@@ -45,9 +46,10 @@ node app/server.mjs
 
 ### 桌面软件
 
-1. 下载 GitHub Releases 中的 `video_to_3d_studio-v0.3.0.zip` 并解压。
-2. 安装 Node.js 22+、FFmpeg/FFprobe 和 Blender 5.2+。
-3. 双击 `app/start_video_to_3d.bat`，按页面提示填写本机程序路径和外部模型接口。
+1. 下载 GitHub Releases 中的 `video_to_3d_studio-v0.5.0.zip` 并解压。
+2. 安装 Node.js 22+、FFmpeg/FFprobe、COLMAP 和支持 CLI 的 Brush。
+3. 双击 `app/start_video_to_3d.bat`，在页面中选择“本地 COLMAP + Brush（免 Blender）”。
+4. 在页面中填写 `colmap`、`brush`，或填写两个可执行文件的完整路径。
 
 ### Blender 插件
 
@@ -131,5 +133,5 @@ node app/server.mjs
 
 ## 版本
 
-当前软件发布版本：`v0.3.0`；Blender 插件版本：`v0.2.0`。
+当前软件发布版本：`v0.5.0`；Blender 插件版本：`v0.2.0`。
 
