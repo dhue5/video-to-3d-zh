@@ -5,7 +5,7 @@
 桌面软件是推荐入口，适用于手表和其他物品的视频建模。
 
 1. 安装 Windows 版 Node.js 22+、FFmpeg/FFprobe、COLMAP 和支持 CLI 的 Brush。
-2. 解压 GitHub Release 中的 `video_to_3d_studio-v0.5.0.zip`。
+2. 解压 GitHub Release 中的 `video_to_3d_studio-v0.5.1.zip`。
 3. 双击 `app/start_video_to_3d.bat`；软件会在浏览器打开本地控制台。
 4. 选择“本地 COLMAP + Brush（免 Blender）”，填写 `colmap` 和 `brush`，或填写完整路径。
 5. 点击“检查本地引擎”，确认两个命令都能响应。
@@ -84,4 +84,3 @@ video_to_3d_zh/__init__.py
 ### 建模失败
 
 查看面板底部的实时日志和项目目录中的 `logs/pipeline.log`。常见原因包括接口超时、模型不支持图片输入、返回内容不是 JSON，或视频关键帧不足以判断物体结构。
-

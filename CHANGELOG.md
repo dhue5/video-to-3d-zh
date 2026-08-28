@@ -1,5 +1,11 @@
 # 更新日志
 
+## v0.5.1 — COLMAP 4.1.1 兼容与训练进度
+
+- 修正 COLMAP 4.1.1 的 GPU 参数名称。
+- Brush 训练按导出检查点更新百分比和步数。
+- 默认本地流水线继续输出 `final.ply`，不依赖 Blender。
+
 ## v0.5.0 — COLMAP + Brush 本地核心流水线
 
 - 将本地默认建模核心改为 `FFmpeg/FFprobe → COLMAP → Brush`。
@@ -38,4 +44,3 @@
 - 增加 GLB、glTF、OBJ、FBX 输出。
 - 默认输出位置设为 Windows 用户下载目录。
 - 参考 OOOSplat 的项目化任务组织方式，但不包含其代码或资源。
-
