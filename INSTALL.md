@@ -4,18 +4,22 @@
 
 桌面软件是推荐入口，适用于手表和其他物品的视频建模。
 
-1. 安装 Windows 版 Node.js 22+、FFmpeg/FFprobe 和 Blender 5.2+。
-2. 解压 GitHub Release 中的 `video_to_3d_studio-v0.3.0.zip`。
+1. 安装 Windows 版 Node.js 22+、FFmpeg/FFprobe、COLMAP 和支持 CLI 的 Brush。
+2. 解压 GitHub Release 中的 `video_to_3d_studio-v0.5.0.zip`。
 3. 双击 `app/start_video_to_3d.bat`；软件会在浏览器打开本地控制台。
-4. 在“本机工具”中填写 Blender、FFmpeg、FFprobe 的完整路径；Windows 常见 Blender 路径为 `E:\\Blender\\blender.exe`。
-5. 在“外部模型接口”中填写 API URL、API 密钥和模型名称，点击“读取模型”或“测试接口”。
-6. 选择视频与质量档位，点击“开始建模”，在进度条和日志中查看阶段进度。
+4. 选择“本地 COLMAP + Brush（免 Blender）”，填写 `colmap` 和 `brush`，或填写完整路径。
+5. 点击“检查本地引擎”，确认两个命令都能响应。
+6. 选择视频与质量档位，点击“开始生成”，在进度条和日志中查看阶段进度。
+
+主流程为 `FFmpeg/FFprobe → COLMAP → Brush → final.ply`，不依赖 Blender。Brush 使用可用图形后端进行 Gaussian Splatting 训练，建议使用独立显卡。
+
+也可以选择“本地 Hunyuan3D 网格（免 Blender）”直接输出网格，或选择“Blender 程序化（兼容旧流程）”使用旧版工作流。
 
 软件配置保存在 `%LOCALAPPDATA%\\VideoTo3DStudio\\settings.json`。API 密钥默认不保存，只有主动勾选“保存密钥”才写入本机配置；不要把该文件提交到 GitHub。输出默认位于 `C:\\Users\\你的用户名\\Downloads`。
 
 项目目录会包含 `project.json`、`state.json`、`source`、`work/frames`、`logs/pipeline.log`、`model_spec.json` 和 `outputs`，便于恢复、检查和重复导出。
 
-> 当前实现是“视频关键帧 + AI 分析 + Blender 程序化重建”的 MVP，不是完整摄影测量或 Gaussian Splatting 引擎。
+> 当前实现是“视频关键帧 + COLMAP 相机重建 + Brush Gaussian Splatting”的 MVP，输出为 `final.ply`。
 
 ## 方式一：安装发布 ZIP
 
