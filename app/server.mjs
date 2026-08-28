@@ -362,7 +362,7 @@ async function createTask(options) {
   };
   tasks.set(id, task);
   await fs.writeFile(path.join(projectPath, 'project.json'), JSON.stringify({
-    app: 'video-to-3d-studio', version: '0.5.1', id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath,
+    app: 'video-to-3d-studio', version: '0.5.2', id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath,
     engineMode: options.engineMode, quality: options.quality, outputFormat: options.outputFormat, createdAt: task.state.startedAt,
   }, null, 2), 'utf8');
   await writeState(task);
@@ -513,14 +513,39 @@ async function runColmap(task, colmapPath, framePaths, useGpu) {
   await runProcess(task, colmapPath, [
     'mapper', '--database_path', databasePath, '--image_path', imageRoot, '--output_path', sparseRoot,
   ], { onLine: (line) => appendLog(task, line, 'colmap') });
-  const modelRoot = path.join(sparseRoot, '0');
-  if (!fsSync.existsSync(path.join(modelRoot, 'cameras.bin')) || !fsSync.existsSync(path.join(modelRoot, 'images.bin'))) {
-    throw new Error('COLMAP 没有生成有效的 sparse/0 相机重建，请使用有重叠视角、运动平稳的视频。');
+  const modelCandidates = [];
+  for (const entry of await fs.readdir(sparseRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const candidateRoot = path.join(sparseRoot, entry.name);
+    if (!fsSync.existsSync(path.join(candidateRoot, 'cameras.bin')) || !fsSync.existsSync(path.join(candidateRoot, 'images.bin'))) continue;
+    let registeredImages = 0;
+    let points = 0;
+    try {
+      const analysis = await runProcess(task, colmapPath, ['model_analyzer', '--path', candidateRoot], { onLine: () => {} });
+      const text = `${analysis.stdout}\n${analysis.stderr}`;
+      registeredImages = Number(text.match(/Registered images:\s*(\d+)/)?.[1] || 0);
+      points = Number(text.match(/Points:\s*(\d+)/)?.[1] || 0);
+    } catch {
+      // Older COLMAP builds may not include model_analyzer; file sizes remain a useful fallback.
+    }
+    const imageBytes = (await fs.stat(path.join(candidateRoot, 'images.bin'))).size;
+    const pointBytes = fsSync.existsSync(path.join(candidateRoot, 'points3D.bin'))
+      ? (await fs.stat(path.join(candidateRoot, 'points3D.bin'))).size : 0;
+    modelCandidates.push({ root: candidateRoot, registeredImages, points, score: registeredImages * 1000000000 + points * 1000 + imageBytes + pointBytes });
   }
+  modelCandidates.sort((a, b) => b.score - a.score);
+  const selected = modelCandidates[0];
+  if (!selected) throw new Error('COLMAP 没有生成有效的相机重建，请使用有重叠视角、运动平稳的视频。');
+  const modelRoot = selected.root;
+  const selectedDatasetRoot = path.join(task.projectPath, 'work', 'colmap_selected');
+  await fs.mkdir(path.join(selectedDatasetRoot, 'sparse', '0'), { recursive: true });
+  await fs.cp(imageRoot, path.join(selectedDatasetRoot, 'images'), { recursive: true, force: true });
+  await fs.cp(modelRoot, path.join(selectedDatasetRoot, 'sparse', '0'), { recursive: true, force: true });
   await fs.writeFile(path.join(colmapRoot, 'reconstruction.json'), JSON.stringify({
     imageCount: framePaths.length, useGpu: Boolean(useGpu), modelRoot,
+    selectedDatasetRoot, candidates: modelCandidates.map(({ root, registeredImages, points }) => ({ root, registeredImages, points })),
   }, null, 2), 'utf8');
-  return { colmapRoot, imageRoot, modelRoot };
+  return { colmapRoot, imageRoot, modelRoot, brushDatasetRoot: selectedDatasetRoot, selectedModel: selected };
 }
 
 async function runBrush(task, brushPath, dataset, useGpu) {
@@ -548,7 +573,7 @@ async function runBrush(task, brushPath, dataset, useGpu) {
   progressTimer = setInterval(() => { updateExportProgress().catch(() => {}); }, 1000);
   try {
     await runProcess(task, brushPath, [
-      dataset.colmapRoot,
+      dataset.brushDatasetRoot || dataset.colmapRoot,
       '--total-steps', String(totalSteps),
       '--max-resolution', String(maxResolution),
       '--max-splats', '7000000',
@@ -572,7 +597,7 @@ async function runBrush(task, brushPath, dataset, useGpu) {
   await setStage(task, 'building', 93, `Brush 训练完成：${totalSteps}/${totalSteps} 步`, totalSteps, totalSteps);
   await fs.copyFile(source, finalPath);
   await fs.writeFile(path.join(brushRoot, 'training.json'), JSON.stringify({
-    totalSteps, maxResolution, exportEvery, expectedExports, useGpu: Boolean(useGpu), source, finalPath,
+    totalSteps, maxResolution, exportEvery, expectedExports, useGpu: Boolean(useGpu), dataset: dataset.brushDatasetRoot || dataset.colmapRoot, source, finalPath,
   }, null, 2), 'utf8');
   return { model: finalPath, engine: 'LOCAL_SPLAT', format: 'ply', brushOutput: source };
 }
@@ -736,7 +761,7 @@ async function handle(request, response) {
     }
     return writeJson(response, 200, { message: '已发送取消请求。' });
   }
-  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.5.1' });
+  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.5.2' });
   return writeJson(response, 404, { error: 'Not found' });
 }
 
