@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoTo3D Studio</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0e141b; --panel:#17212b; --panel2:#1d2a36; --line:#2b3b49; --text:#e8f0f6; --muted:#96a8b7; --accent:#54c2a5; --blue:#7ca9ff; --danger:#f27d7d; --shadow:0 20px 50px #0005; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:980px; background:radial-gradient(circle at 15% 0%,#1b3b43 0,#0e141b 38%),var(--bg); color:var(--text); font:14px/1.55 "Microsoft YaHei",system-ui,sans-serif; }
+    button,input,select { font:inherit; }
+    button { border:1px solid var(--line); border-radius:8px; padding:8px 13px; color:var(--text); background:#243441; cursor:pointer; transition:.15s; }
+    button:hover { border-color:var(--accent); background:#2b4650; }
+    button.primary { background:var(--accent); color:#071815; border-color:var(--accent); font-weight:700; }
+    button.danger { color:#fff; background:#713b45; border-color:#9b515d; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    input,select { width:100%; padding:9px 10px; background:#101922; border:1px solid var(--line); border-radius:7px; color:var(--text); outline:none; }
+    input:focus,select:focus { border-color:var(--accent); box-shadow:0 0 0 2px #54c2a533; }
+    .shell { max-width:1500px; margin:0 auto; padding:26px 30px 42px; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:22px; }
+    .eyebrow { color:var(--accent); letter-spacing:.14em; text-transform:uppercase; font-size:11px; font-weight:700; }
+    h1 { margin:4px 0 5px; font-size:30px; letter-spacing:-.03em; }
+    h2 { margin:0 0 14px; font-size:17px; }
+    h3 { margin:0 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
+    .subtitle { color:var(--muted); margin:0; }
+    .version { color:var(--muted); border:1px solid var(--line); padding:6px 10px; border-radius:999px; }
+    .grid { display:grid; grid-template-columns:minmax(440px,1fr) minmax(440px,1fr); gap:18px; }
+    .panel { background:linear-gradient(145deg,#17232d,#121b23); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:var(--shadow); }
+    .panel.full { grid-column:1 / -1; }
+    .section-title { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:15px; }
+    .section-title .num { display:inline-grid; place-items:center; width:27px; height:27px; margin-right:8px; border-radius:50%; background:#26444b; color:var(--accent); font-weight:700; }
+    .field { margin:11px 0; }
+    .field label { display:block; margin-bottom:5px; color:#c3d0da; }
+    .hint { color:var(--muted); font-size:12px; margin-top:5px; }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .three { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; }
+    .check { display:flex; align-items:center; gap:8px; color:#c3d0da; margin:12px 0; }
+    .check input { width:auto; accent-color:var(--accent); }
+    .status-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:5px 9px; font-size:12px; color:var(--muted); }
+    .status-pill.ok { color:var(--accent); border-color:#347666; }
+    .status-pill.error { color:var(--danger); border-color:#8b4b58; }
+    .progress-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .percent { font-size:27px; color:var(--accent); font-weight:700; }
+    .bar { height:13px; background:#0b1117; border:1px solid var(--line); border-radius:999px; overflow:hidden; margin:14px 0 9px; }
+    .bar > div { height:100%; width:0%; background:linear-gradient(90deg,#46b899,#9ae7c0); transition:width .25s ease; }
+    .progress-message { color:#c9d7df; min-height:24px; }
+    .timeline { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin:16px 0; }
+    .stage { min-height:48px; padding:6px 4px; text-align:center; border:1px solid var(--line); border-radius:7px; color:#71828f; font-size:11px; }
+    .stage.active { color:var(--accent); border-color:#448a7c; background:#1d393a; }
+    .stage.done { color:#b7ddce; border-color:#356658; }
+    .meta { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; color:var(--muted); font-size:12px; }
+    .meta div { padding:8px; background:#101922; border-radius:7px; min-height:48px; }
+    .meta strong { display:block; color:#dbe7ee; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    pre { margin:12px 0 0; padding:12px; height:190px; overflow:auto; background:#0b1117; border:1px solid var(--line); border-radius:8px; color:#b8c9d4; font:12px/1.55 Consolas,monospace; white-space:pre-wrap; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:9px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:12px; font-weight:500; }
+    td { color:#cddae2; }
+    .empty { color:var(--muted); padding:14px 0 2px; }
+    .toast { position:fixed; right:24px; bottom:24px; max-width:480px; padding:12px 15px; background:#263b45; border:1px solid #41636e; border-radius:9px; box-shadow:var(--shadow); display:none; }
+    .toast.show { display:block; }
+    .toast.error { border-color:#9b515d; background:#482934; }
+    @media (max-width:1050px) { body { min-width:0; } .shell { padding:18px; } .grid { grid-template-columns:1fr; } .panel.full { grid-column:auto; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">Local 3D reconstruction workspace</div>
+        <h1>VideoTo3D Studio</h1>
+        <p class="subtitle">视频 → 关键帧 → AI 分析 → Blender 可编辑模型</p>
+      </div>
+      <div class="version">v0.3.0 · 本地运行</div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="section-title"><h2><span class="num">01</span>创建新任务</h2><span id="health" class="status-pill">检查中</span></div>
+        <div class="field"><label for="videoPath">输入视频完整路径</label><input id="videoPath" placeholder="例如：C:\\Users\\你\\Downloads\\object.mp4"><div class="hint">软件只在本机读取视频；请粘贴 Windows 文件的完整路径。</div></div>
+        <div class="field"><label for="outputRoot">项目输出根目录</label><input id="outputRoot"><div class="hint">默认：C:\\Users\\你的用户名\\Downloads</div></div>
+        <div class="two">
+          <div class="field"><label for="quality">质量档位</label><select id="quality"><option value="FAST">快速 · 8 张</option><option value="BALANCED" selected>均衡 · 12 张</option><option value="DETAILED">精细 · 20 张</option></select></div>
+          <div class="field"><label for="outputFormat">输出格式</label><select id="outputFormat"><option value="glb" selected>GLB</option><option value="gltf">glTF</option><option value="obj">OBJ</option><option value="fbx">FBX</option></select></div>
+        </div>
+        <div class="field"><label for="blenderPath">Blender 可执行文件</label><input id="blenderPath" placeholder="例如：C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"></div>
+        <div class="two">
+          <div class="field"><label for="ffmpegPath">FFmpeg</label><input id="ffmpegPath" placeholder="ffmpeg"></div>
+          <div class="field"><label for="ffprobePath">FFprobe</label><input id="ffprobePath" placeholder="ffprobe"></div>
+        </div>
+        <div class="actions"><button id="start" class="primary">开始生成</button><button id="cancel" class="danger" disabled>取消任务</button><button id="saveConfig">保存本机设置</button></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title"><h2><span class="num">02</span>外部 AI 接口</h2><span id="keyState" class="status-pill">未配置</span></div>
+        <div class="field"><label for="apiUrl">接口 URL</label><input id="apiUrl" placeholder="https://your-provider.example/v1"><div class="hint">支持填写根地址、/v1、/v1/model 或完整接口，软件会规范到标准路径。</div></div>
+        <div class="two">
+          <div class="field"><label for="modelName">模型名称</label><input id="modelName" placeholder="填写视觉模型名称"></div>
+          <div class="field"><label for="authType">认证方式</label><select id="authType"><option value="BEARER" selected>Bearer</option><option value="X_API_KEY">X-API-Key</option><option value="NONE">不使用密钥</option></select></div>
+        </div>
+        <div class="field"><label for="apiKey">接口密钥</label><input id="apiKey" type="password" placeholder="仅当前会话使用"><div class="hint" id="keyHint">密钥不会写入项目文件或仓库。</div></div>
+        <label class="check"><input id="rememberKey" type="checkbox">保存密钥到本机 VideoTo3D Studio 设置</label>
+        <div class="actions"><button id="models">读取模型列表</button><button id="test">测试接口</button></div>
+        <div class="field"><label for="modelOptions">模型列表</label><select id="modelOptions"><option value="">尚未读取</option></select></div>
+        <div class="hint">模型列表地址：<span id="modelsEndpoint">/v1/models</span></div>
+      </section>
+
+      <section class="panel full">
+        <div class="section-title"><h2><span class="num">03</span>实时流水线</h2><span id="taskStatus" class="status-pill">待命</span></div>
+        <div class="progress-head"><div><h3 id="stageLabel">尚未开始</h3><div id="progressMessage" class="progress-message">选择视频并点击“开始生成”。</div></div><div id="percent" class="percent">0%</div></div>
+        <div class="bar"><div id="barFill"></div></div>
+        <div class="timeline" id="timeline"></div>
+        <div class="meta"><div>当前项目<strong id="projectPath">—</strong></div><div>计数<strong id="counter">—</strong></div><div>已用时间<strong id="elapsed">—</strong></div></div>
+        <h3 style="margin-top:16px">实时日志</h3><pre id="logs">等待任务开始…</pre>
+      </section>
+
+      <section class="panel full">
+        <div class="section-title"><h2><span class="num">04</span>历史任务</h2><button id="refreshHistory">刷新</button></div>
+        <div id="history" class="empty">暂时没有项目记录。</div>
+      </section>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script>
+    const STAGES = [['preparing','准备项目'],['probing','分析视频'],['extracting','抽取关键帧'],['analyzing','AI 分析'],['building','生成模型'],['saving','保存项目'],['exporting','输出模型']];
+    const $ = (id) => document.getElementById(id);
+    let currentId = null;
+    let eventSource = null;
+    let startTime = null;
+
+    function fields() {
+      return { videoPath:$('videoPath').value.trim(), outputRoot:$('outputRoot').value.trim(), quality:$('quality').value, outputFormat:$('outputFormat').value, blenderPath:$('blenderPath').value.trim(), ffmpegPath:$('ffmpegPath').value.trim(), ffprobePath:$('ffprobePath').value.trim(), apiUrl:$('apiUrl').value.trim(), modelName:$('modelName').value.trim(), apiKey:$('apiKey').value, authType:$('authType').value, rememberKey:$('rememberKey').checked };
+    }
+    async function call(url, options={}) { const response = await fetch(url, {headers:{'content-type':'application/json'}, ...options}); const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败'); return data; }
+    function toast(message, error=false) { const node=$('toast'); node.textContent=message; node.className='toast show'+(error?' error':''); clearTimeout(toast.timer); toast.timer=setTimeout(()=>node.className='toast',5000); }
+    function setStatus(node, text, type='') { node.textContent=text; node.className='status-pill'+(type?' '+type:''); }
+    function drawTimeline(state={}) { $('timeline').innerHTML=STAGES.map(([key,label],index)=>{ const active=key===state.stage && state.status==='RUNNING'; const done=state.status==='COMPLETED' || index < STAGES.findIndex(([item])=>item===state.stage); return `<div class="stage ${active?'active':''} ${done?'done':''}">${done?'✓ ':active?'▶ ':'○ '}${label}</div>`; }).join(''); }
+    function renderState(state) { const percent=Math.max(0,Math.min(100,Number(state.percent||0))); $('barFill').style.width=percent+'%'; $('percent').textContent=percent+'%'; $('stageLabel').textContent=state.stageLabel||'尚未开始'; $('progressMessage').textContent=state.message||'—'; $('projectPath').textContent=state.projectPath||'—'; $('counter').textContent=state.total?`${state.current||0}/${state.total}`:'—'; const elapsed=state.startedAt?Math.max(0,(new Date(state.finishedAt||Date.now())-new Date(state.startedAt))/1000):0; $('elapsed').textContent=elapsed?elapsed.toFixed(1)+' 秒':'—'; const status=state.status||'IDLE'; setStatus($('taskStatus'), status==='RUNNING'?'处理中':status==='COMPLETED'?'已完成':status==='FAILED'?'失败':status==='CANCELLED'?'已取消':'待命', status==='COMPLETED'?'ok':status==='FAILED'?'error':''); drawTimeline(state); $('cancel').disabled=status!=='RUNNING'; $('start').disabled=status==='RUNNING'; }
+    function addLog(line) { const node=$('logs'); if(node.textContent==='等待任务开始…') node.textContent=''; node.textContent += (node.textContent?'\n':'')+line; node.scrollTop=node.scrollHeight; }
+    async function saveConfig(show=true) { const data=await call('/api/config',{method:'POST',body:JSON.stringify(fields())}); if(data.hasKey){$('keyHint').textContent='本机已有保存的密钥；输入框不会回显密钥。';} setStatus($('keyState'), data.apiUrl&&data.modelName?'已配置':'未配置', data.apiUrl&&data.modelName?'ok':''); if(show) toast('本机设置已保存'); return data; }
+    async function loadConfig() { const data=await call('/api/config'); for(const id of ['apiUrl','modelName','blenderPath','ffmpegPath','ffprobePath','outputRoot','quality','outputFormat','authType']) if(data[id]!==undefined) $(id).value=data[id]; $('rememberKey').checked=Boolean(data.rememberKey); $('apiKey').value=''; $('apiKey').placeholder=data.hasKey?'已保存，留空则继续使用':'仅当前会话使用'; $('keyHint').textContent=data.hasKey?'本机已有保存的密钥；输入框不会回显密钥。':'密钥不会写入项目文件或仓库。'; setStatus($('keyState'), data.apiUrl&&data.modelName?'已配置':'未配置', data.apiUrl&&data.modelName?'ok':''); $('modelsEndpoint').textContent=(data.apiUrl?data.apiUrl.replace(/\/+$/,''):'/v1')+'/v1/models'; }
+    async function loadModels() { const data=await call('/api/models',{method:'POST',body:JSON.stringify(fields())}); const select=$('modelOptions'); select.innerHTML='<option value="">选择模型…</option>'+data.models.map(item=>`<option value="${item.id.replace(/"/g,'&quot;')}">${item.id}${item.provider?' · '+item.provider:''}</option>`).join(''); $('modelsEndpoint').textContent=data.endpoint; toast(`已读取 ${data.models.length} 个模型`); }
+    async function testApi() { const data=await call('/api/test',{method:'POST',body:JSON.stringify(fields())}); toast(`${data.message}（${data.endpoint}）`); }
+    function connect(id) { if(eventSource) eventSource.close(); eventSource=new EventSource('/api/events?project='+encodeURIComponent(id)); eventSource.onmessage=(event)=>{ const data=JSON.parse(event.data); if(data.type==='progress'||data.type==='state'){renderState(data.state);} if(data.type==='log'){addLog(data.line);} if(data.type==='done'){renderState(data.state); eventSource.close(); eventSource=null; loadHistory(); if(data.state.status==='COMPLETED') toast('建模完成，结果已写入项目目录'); else if(data.state.status!=='CANCELLED') toast(data.state.message||'任务失败',true); } }; eventSource.onerror=()=>{}; }
+    async function startTask() { const data=fields(); if(!data.videoPath) return toast('请先填写视频完整路径',true); if(!data.blenderPath) return toast('请先填写 Blender 可执行文件路径',true); try { await saveConfig(false); const result=await call('/api/start',{method:'POST',body:JSON.stringify(data)}); currentId=result.id; startTime=Date.now(); $('logs').textContent=''; renderState(result.state); connect(currentId); toast('任务已开始'); } catch(error){toast(error.message,true);} }
+    async function cancelTask() { if(!currentId) return; try { await call('/api/cancel',{method:'POST',body:JSON.stringify({id:currentId})}); toast('已发送取消请求'); } catch(error){toast(error.message,true);} }
+    async function loadHistory() { const data=await call('/api/projects'); if(!data.projects.length){$('history').innerHTML='<div class="empty">暂时没有项目记录。</div>';return;} $('history').innerHTML='<table><thead><tr><th>状态</th><th>项目</th><th>阶段</th><th>时间</th><th>输出</th></tr></thead><tbody>'+data.projects.map(item=>`<tr><td>${item.status||'—'}</td><td title="${item.projectPath||''}">${item.projectPath||'—'}</td><td>${item.stageLabel||'—'}</td><td>${item.finishedAt||item.startedAt||'—'}</td><td>${item.output?.model||'—'}</td></tr>`).join('')+'</tbody></table>'; }
+    $('saveConfig').onclick=()=>saveConfig().catch(error=>toast(error.message,true)); $('models').onclick=()=>loadModels().catch(error=>toast(error.message,true)); $('test').onclick=()=>testApi().catch(error=>toast(error.message,true)); $('start').onclick=startTask; $('cancel').onclick=cancelTask; $('refreshHistory').onclick=()=>loadHistory().catch(error=>toast(error.message,true)); $('modelOptions').onchange=()=>{if($('modelOptions').value)$('modelName').value=$('modelOptions').value;}; $('apiUrl').oninput=()=>{ const value=$('apiUrl').value.trim().replace(/\/+$/,''); $('modelsEndpoint').textContent=(value||'/v1')+'/v1/models'; };
+    (async()=>{ try { await call('/api/health'); setStatus($('health'),'运行正常','ok'); await loadConfig(); await loadHistory(); } catch(error){setStatus($('health'),'连接失败','error'); toast(error.message,true);} drawTimeline(); })();
+  </script>
+</body>
+</html>
