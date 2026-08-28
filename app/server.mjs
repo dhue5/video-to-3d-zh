@@ -24,8 +24,8 @@ const STAGES = [
   ['preparing', '准备项目'],
   ['probing', '分析视频'],
   ['extracting', '抽取关键帧'],
-  ['analyzing', 'AI 分析'],
-  ['building', '生成模型'],
+  ['analyzing', '相机重建'],
+  ['building', 'Gaussian 训练'],
   ['saving', '保存项目'],
   ['exporting', '输出模型'],
 ];
@@ -69,6 +69,11 @@ function requestHeaders(config, json = false) {
 
 function publicConfig(config) {
   return {
+    engineMode: config.engineMode || 'LOCAL_SPLAT',
+    localApiUrl: safeText(config.localApiUrl, 'http://127.0.0.1:8080'),
+    colmapPath: safeText(config.colmapPath, 'colmap'),
+    brushPath: safeText(config.brushPath, 'brush'),
+    localUseGpu: config.localUseGpu !== false,
     apiUrl: safeText(config.apiUrl),
     modelName: safeText(config.modelName),
     authType: config.authType || 'BEARER',
@@ -79,7 +84,7 @@ function publicConfig(config) {
     ffprobePath: safeText(config.ffprobePath, 'ffprobe'),
     outputRoot: safeText(config.outputRoot, DEFAULT_OUTPUT_ROOT),
     quality: config.quality || 'BALANCED',
-    outputFormat: config.outputFormat || 'glb',
+    outputFormat: config.outputFormat || 'ply',
   };
 }
 
@@ -89,6 +94,11 @@ async function readConfig() {
     return JSON.parse(raw);
   } catch {
     return {
+      engineMode: 'LOCAL_SPLAT',
+      localApiUrl: 'http://127.0.0.1:8080',
+      colmapPath: 'colmap',
+      brushPath: 'brush',
+      localUseGpu: true,
       apiUrl: '',
       modelName: '',
       apiKey: '',
@@ -99,7 +109,7 @@ async function readConfig() {
       ffprobePath: 'ffprobe',
       outputRoot: DEFAULT_OUTPUT_ROOT,
       quality: 'BALANCED',
-      outputFormat: 'glb',
+      outputFormat: 'ply',
     };
   }
 }
@@ -109,6 +119,11 @@ async function saveConfig(input) {
   const previous = await readConfig();
   const next = {
     ...previous,
+    engineMode: ['LOCAL_SPLAT', 'LOCAL_HUNYUAN', 'BLENDER'].includes(input.engineMode) ? input.engineMode : (previous.engineMode || 'LOCAL_SPLAT'),
+    localApiUrl: safeText(input.localApiUrl, previous.localApiUrl || 'http://127.0.0.1:8080'),
+    colmapPath: safeText(input.colmapPath, previous.colmapPath || 'colmap'),
+    brushPath: safeText(input.brushPath, previous.brushPath || 'brush'),
+    localUseGpu: input.localUseGpu !== false,
     apiUrl: safeText(input.apiUrl),
     modelName: safeText(input.modelName),
     authType: ['BEARER', 'X_API_KEY', 'NONE'].includes(input.authType) ? input.authType : 'BEARER',
@@ -118,7 +133,7 @@ async function saveConfig(input) {
     ffprobePath: safeText(input.ffprobePath, 'ffprobe'),
     outputRoot: safeText(input.outputRoot, DEFAULT_OUTPUT_ROOT),
     quality: QUALITY[input.quality] ? input.quality : 'BALANCED',
-    outputFormat: ['glb', 'gltf', 'obj', 'fbx'].includes(input.outputFormat) ? input.outputFormat : 'glb',
+    outputFormat: ['ply', 'glb', 'gltf', 'obj', 'fbx'].includes(input.outputFormat) ? input.outputFormat : 'ply',
   };
   if (next.rememberKey) next.apiKey = safeText(input.apiKey) || safeText(previous.apiKey);
   else next.apiKey = '';
@@ -331,21 +346,24 @@ async function createTask(options) {
   await fs.mkdir(path.join(projectPath, 'work', 'frames'), { recursive: true });
   await fs.mkdir(path.join(projectPath, 'logs'), { recursive: true });
   await fs.mkdir(path.join(projectPath, 'outputs'), { recursive: true });
+  const sourceExtension = path.extname(videoPath).toLowerCase() || '.mp4';
+  const sourcePath = path.join(projectPath, 'source', `input${sourceExtension}`);
+  await fs.copyFile(videoPath, sourcePath);
   const id = randomUUID();
   const statePath = path.join(projectPath, 'state.json');
   const logPath = path.join(projectPath, 'logs', 'pipeline.log');
   const task = {
-    id, videoPath, projectPath, statePath, logPath, options, children: new Set(), logLines: [],
+    id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath, statePath, logPath, options, children: new Set(), logLines: [],
     state: {
       id, status: 'RUNNING', stage: 'preparing', stageLabel: '准备项目', percent: 0,
-      message: '正在创建项目目录', current: 0, total: 0, videoPath, projectPath,
+      message: '正在创建项目目录', current: 0, total: 0, videoPath: sourcePath, projectPath,
       startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     },
   };
   tasks.set(id, task);
   await fs.writeFile(path.join(projectPath, 'project.json'), JSON.stringify({
-    app: 'video-to-3d-studio', version: '0.3.0', id, videoPath, projectPath,
-    quality: options.quality, outputFormat: options.outputFormat, createdAt: task.state.startedAt,
+    app: 'video-to-3d-studio', version: '0.5.0', id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath,
+    engineMode: options.engineMode, quality: options.quality, outputFormat: options.outputFormat, createdAt: task.state.startedAt,
   }, null, 2), 'utf8');
   await writeState(task);
   await appendLog(task, `项目已创建：${projectPath}`);
@@ -357,10 +375,11 @@ async function runBlender(task, blenderPath, specPath) {
   if (!fsSync.existsSync(blenderPath)) throw new Error(`找不到 Blender：${blenderPath}`);
   const scriptPath = path.join(APP_DIR, 'blender_build.py');
   const outputBase = path.join(task.projectPath, 'outputs', 'video_to_3d_model');
+  const format = localFormat(task.options.outputFormat);
   const args = [
     '-b', '--factory-startup', '--python', scriptPath, '--',
-    '--spec', specPath, '--blend', `${outputBase}.blend`, '--export', `${outputBase}.${task.options.outputFormat}`,
-    '--format', task.options.outputFormat,
+    '--spec', specPath, '--blend', `${outputBase}.blend`, '--export', `${outputBase}.${format}`,
+    '--format', format,
   ];
   await runProcess(task, blenderPath, args, {
     onLine: (line) => {
@@ -371,7 +390,172 @@ async function runBlender(task, blenderPath, specPath) {
       } else appendLog(task, line, 'blender');
     },
   });
-  return { blend: `${outputBase}.blend`, model: `${outputBase}.${task.options.outputFormat}` };
+  return { blend: `${outputBase}.blend`, model: `${outputBase}.${format}` };
+}
+
+function localApiRoot(value) {
+  const endpoint = safeText(value, 'http://127.0.0.1:8080').replace(/\/+$/, '');
+  return endpoint.replace(/\/(?:generate|send|health)$/i, '');
+}
+
+function localHealthEndpoint(value) {
+  return `${localApiRoot(value)}/health`;
+}
+
+function localGenerateEndpoint(value) {
+  return `${localApiRoot(value)}/generate`;
+}
+
+function localFormat(value) {
+  return ['glb', 'gltf', 'obj', 'fbx'].includes(value) ? value : 'glb';
+}
+
+function decodeLocalData(value) {
+  const text = safeText(value);
+  if (!text) return null;
+  const match = text.match(/^data:[^;,]+;base64,(.+)$/s);
+  try { return Buffer.from(match ? match[1] : text, 'base64'); } catch { return null; }
+}
+
+async function saveLocalModelResponse(response, targetPath) {
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const looksJson = contentType.includes('json') || bytes.slice(0, 1).toString() === '{';
+  if (!looksJson) {
+    await fs.writeFile(targetPath, bytes);
+    return targetPath;
+  }
+  let payload;
+  try { payload = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('本地 3D 引擎返回了无法解析的响应。'); }
+  const candidate = payload?.model_path || payload?.file_path || payload?.path || payload?.url || payload?.model || payload?.glb || payload?.obj || payload?.data;
+  if (typeof candidate !== 'string' || !candidate.trim()) throw new Error('本地 3D 引擎响应中没有模型文件。');
+  if (/^https?:\/\//i.test(candidate)) {
+    const fileResponse = await fetch(candidate);
+    if (!fileResponse.ok) throw new Error(`本地 3D 模型下载失败 HTTP ${fileResponse.status}`);
+    await fs.writeFile(targetPath, Buffer.from(await fileResponse.arrayBuffer()));
+    return targetPath;
+  }
+  if (fsSync.existsSync(candidate)) {
+    await fs.copyFile(candidate, targetPath);
+    return targetPath;
+  }
+  const decoded = decodeLocalData(candidate);
+  if (decoded?.length) {
+    await fs.writeFile(targetPath, decoded);
+    return targetPath;
+  }
+  throw new Error('本地 3D 引擎返回的模型路径或数据无效。');
+}
+
+async function runLocalHunyuan(task, localUrl, framePaths) {
+  if (!safeText(localUrl)) throw new Error('请填写本地 Hunyuan3D API 地址。');
+  const inputFrame = framePaths[Math.floor(framePaths.length / 2)] || framePaths[0];
+  if (!inputFrame) throw new Error('没有可供本地 3D 引擎使用的关键帧。');
+  const format = localFormat(task.options.outputFormat);
+  const outputBase = path.join(task.projectPath, 'outputs', 'video_to_3d_model');
+  const outputPath = `${outputBase}.${format}`;
+  const image = (await fs.readFile(inputFrame)).toString('base64');
+  const quality = QUALITY[task.options.quality] || QUALITY.BALANCED;
+  const resolution = quality === QUALITY.FAST ? 192 : quality === QUALITY.DETAILED ? 320 : 256;
+  const response = await fetch(localGenerateEndpoint(localUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      image: `data:image/png;base64,${image}`,
+      remove_background: true,
+      texture: true,
+      type: format,
+      octree_resolution: resolution,
+    }),
+  });
+  if (!response.ok) {
+    const message = (await response.text()).slice(0, 500);
+    throw new Error(`本地 Hunyuan3D 请求失败 HTTP ${response.status}${message ? `：${message}` : ''}`);
+  }
+  await saveLocalModelResponse(response, outputPath);
+  return { model: outputPath, engine: 'LOCAL_HUNYUAN', inputFrame, format };
+}
+
+function runCheckProcess(command, args = ['--help']) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    let stderr = '';
+    child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', reject);
+    child.on('close', () => resolve(stderr));
+  });
+}
+
+async function runColmap(task, colmapPath, framePaths, useGpu) {
+  if (!safeText(colmapPath)) throw new Error('请填写 COLMAP 可执行文件路径。');
+  const colmapRoot = path.join(task.projectPath, 'work', 'colmap');
+  const imageRoot = path.join(colmapRoot, 'images');
+  const sparseRoot = path.join(colmapRoot, 'sparse');
+  const databasePath = path.join(colmapRoot, 'database.db');
+  await fs.mkdir(imageRoot, { recursive: true });
+  await fs.mkdir(sparseRoot, { recursive: true });
+  for (let index = 0; index < framePaths.length; index += 1) {
+    const target = path.join(imageRoot, `frame_${String(index + 1).padStart(5, '0')}.png`);
+    await fs.copyFile(framePaths[index], target);
+  }
+  await setStage(task, 'analyzing', 48, 'COLMAP 正在提取特征');
+  await runProcess(task, colmapPath, [
+    'feature_extractor', '--database_path', databasePath, '--image_path', imageRoot,
+    '--ImageReader.single_camera', '1', '--SiftExtraction.use_gpu', useGpu ? '1' : '0',
+  ], { onLine: (line) => appendLog(task, line, 'colmap') });
+  await setStage(task, 'analyzing', 58, 'COLMAP 正在进行顺序匹配');
+  await runProcess(task, colmapPath, [
+    'sequential_matcher', '--database_path', databasePath,
+    '--SequentialMatching.overlap', String(Math.min(20, Math.max(5, Math.round(framePaths.length / 3)))),
+    '--SiftMatching.use_gpu', useGpu ? '1' : '0',
+  ], { onLine: (line) => appendLog(task, line, 'colmap') });
+  await setStage(task, 'analyzing', 66, 'COLMAP 正在重建相机位姿');
+  await runProcess(task, colmapPath, [
+    'mapper', '--database_path', databasePath, '--image_path', imageRoot, '--output_path', sparseRoot,
+  ], { onLine: (line) => appendLog(task, line, 'colmap') });
+  const modelRoot = path.join(sparseRoot, '0');
+  if (!fsSync.existsSync(path.join(modelRoot, 'cameras.bin')) || !fsSync.existsSync(path.join(modelRoot, 'images.bin'))) {
+    throw new Error('COLMAP 没有生成有效的 sparse/0 相机重建，请使用有重叠视角、运动平稳的视频。');
+  }
+  await fs.writeFile(path.join(colmapRoot, 'reconstruction.json'), JSON.stringify({
+    imageCount: framePaths.length, useGpu: Boolean(useGpu), modelRoot,
+  }, null, 2), 'utf8');
+  return { colmapRoot, imageRoot, modelRoot };
+}
+
+async function runBrush(task, brushPath, dataset, useGpu) {
+  if (!safeText(brushPath)) throw new Error('请填写 Brush 可执行文件路径。');
+  const brushRoot = path.join(task.projectPath, 'work', 'brush');
+  const outputDir = path.join(brushRoot, 'exports');
+  await fs.mkdir(outputDir, { recursive: true });
+  const quality = QUALITY[task.options.quality] || QUALITY.BALANCED;
+  const totalSteps = quality === QUALITY.FAST ? 8000 : quality === QUALITY.DETAILED ? 30000 : 15000;
+  const maxResolution = quality === QUALITY.FAST ? 1200 : quality === QUALITY.DETAILED ? 2000 : 1600;
+  await setStage(task, 'building', 72, `${useGpu ? 'GPU' : 'CPU'} Brush 正在训练 Gaussian Splatting`);
+  await runProcess(task, brushPath, [
+    dataset.colmapRoot,
+    '--total-steps', String(totalSteps),
+    '--max-resolution', String(maxResolution),
+    '--max-splats', '7000000',
+    '--export-every', String(totalSteps),
+    '--export-path', outputDir,
+    '--export-name', 'export_{iter}.ply',
+  ], {
+    onLine: (line) => {
+      const match = line.match(/(?:step|iter|iteration)[^0-9]*(\d+)[^0-9]+(?:of|\/)\s*(\d+)/i);
+      if (match) setStage(task, 'building', 72 + (Number(match[1]) / Number(match[2])) * 20, `Brush 训练中：${match[1]}/${match[2]}`);
+      else appendLog(task, line, 'brush');
+    },
+  });
+  const exports = (await fs.readdir(outputDir)).filter((name) => /\.ply$/i.test(name)).sort();
+  if (!exports.length) throw new Error('Brush 没有导出 PLY 文件，请检查 GPU/图形后端和数据集。');
+  const source = path.join(outputDir, exports[exports.length - 1]);
+  const finalPath = path.join(task.projectPath, 'outputs', 'final.ply');
+  await fs.copyFile(source, finalPath);
+  await fs.writeFile(path.join(brushRoot, 'training.json'), JSON.stringify({
+    totalSteps, maxResolution, useGpu: Boolean(useGpu), source, finalPath,
+  }, null, 2), 'utf8');
+  return { model: finalPath, engine: 'LOCAL_SPLAT', format: 'ply', brushOutput: source };
 }
 
 async function runPipeline(task) {
@@ -388,15 +572,41 @@ async function runPipeline(task) {
     await setStage(task, 'extracting', 12, `正在抽取关键帧（${(QUALITY[task.options.quality] || QUALITY.BALANCED).label}）`);
     const frames = await extractFrames(task, ffmpegPath, probe);
     await setStage(task, 'extracting', 35, `关键帧完成：${frames.length} 张`, frames.length, frames.length);
-    if (!safeText(config.apiUrl) || !safeText(config.modelName)) throw new Error('请先在软件中填写 AI 接口 URL 和模型名称。');
-    if (!safeText(config.apiKey) && config.authType !== 'NONE') throw new Error('请先填写 AI 接口密钥，或选择“不使用密钥”。');
-    await setStage(task, 'analyzing', 42, `正在调用 ${config.modelName} 分析关键帧`);
-    const spec = await analyzeWithAI(task, config, frames);
-    const specPath = path.join(task.projectPath, 'model_spec.json');
-    await fs.writeFile(specPath, JSON.stringify(spec, null, 2), 'utf8');
-    await setStage(task, 'analyzing', 72, 'AI 分析完成，已保存建模参数');
-    await setStage(task, 'building', 78, '正在调用 Blender 生成可编辑模型');
-    const output = await runBlender(task, safeText(task.options.blenderPath, config.blenderPath), specPath);
+    const engineMode = task.options.engineMode || config.engineMode || 'LOCAL_SPLAT';
+    let output;
+    if (engineMode === 'LOCAL_SPLAT') {
+      await setStage(task, 'analyzing', 42, '本地流水线已准备，开始执行 FFmpeg/FFprobe → COLMAP → Brush');
+      const colmap = await runColmap(task, safeText(task.options.colmapPath, config.colmapPath || 'colmap'), frames, task.options.localUseGpu !== false);
+      await setStage(task, 'analyzing', 70, 'COLMAP 相机重建完成，开始交给 Brush 训练');
+      await fs.writeFile(path.join(task.projectPath, 'model_spec.json'), JSON.stringify({
+        engine: 'COLMAP + Brush Gaussian Splatting', frameCount: frames.length,
+        dataset: colmap.colmapRoot, modelRoot: colmap.modelRoot,
+        note: '本地视频重建不经过 Blender，最终输出为 final.ply。',
+      }, null, 2), 'utf8');
+      output = await runBrush(task, safeText(task.options.brushPath, config.brushPath || 'brush'), colmap, task.options.localUseGpu !== false);
+    } else if (engineMode === 'BLENDER') {
+      if (!safeText(config.apiUrl) || !safeText(config.modelName)) throw new Error('请先在软件中填写 AI 接口 URL 和模型名称。');
+      if (!safeText(config.apiKey) && config.authType !== 'NONE') throw new Error('请先填写 AI 接口密钥，或选择“不使用密钥”。');
+      await setStage(task, 'analyzing', 42, `正在调用 ${config.modelName} 分析关键帧`);
+      const spec = await analyzeWithAI(task, config, frames);
+      const specPath = path.join(task.projectPath, 'model_spec.json');
+      await fs.writeFile(specPath, JSON.stringify(spec, null, 2), 'utf8');
+      await setStage(task, 'analyzing', 72, 'AI 分析完成，已保存建模参数');
+      await setStage(task, 'building', 78, '正在调用 Blender 生成可编辑模型');
+      output = await runBlender(task, safeText(task.options.blenderPath, config.blenderPath), specPath);
+    } else if (engineMode === 'LOCAL_HUNYUAN') {
+      const inputFrame = frames[Math.floor(frames.length / 2)] || frames[0];
+      await setStage(task, 'analyzing', 42, '本地 Hunyuan3D 正在准备关键帧模型');
+      await fs.writeFile(path.join(task.projectPath, 'model_spec.json'), JSON.stringify({
+        engine: 'Hunyuan3D local API', inputFrame, frameCount: frames.length,
+        note: '本地模型直接生成网格，不经过 Blender。',
+      }, null, 2), 'utf8');
+      await setStage(task, 'analyzing', 55, '本地 3D 引擎已接收关键帧，等待生成');
+      await setStage(task, 'building', 78, '正在由本地 Hunyuan3D 生成网格模型');
+      output = await runLocalHunyuan(task, safeText(task.options.localApiUrl, config.localApiUrl), frames);
+    } else {
+      throw new Error(`不支持的建模引擎：${engineMode}`);
+    }
     await setStage(task, 'saving', 96, '正在写入项目结果');
     await writeState(task, { status: 'COMPLETED', percent: 100, stage: 'exporting', stageLabel: '输出模型', message: '建模完成', output, finishedAt: new Date().toISOString() });
     await appendLog(task, `建模完成：${output.model}`);
@@ -459,6 +669,22 @@ async function handle(request, response) {
     try { return writeJson(response, 200, { models: await fetchModels(config), endpoint: modelsEndpoint(config.apiUrl) }); }
     catch (error) { return writeJson(response, 400, { error: error.message }); }
   }
+  if (request.method === 'POST' && url.pathname === '/api/local-test') {
+    const input = await readBody(request);
+    try {
+      if ((input.engineMode || 'LOCAL_SPLAT') === 'LOCAL_SPLAT') {
+        const colmapPath = safeText(input.colmapPath, 'colmap');
+        const brushPath = safeText(input.brushPath, 'brush');
+        await runCheckProcess(colmapPath);
+        await runCheckProcess(brushPath);
+        return writeJson(response, 200, { message: 'COLMAP 和 Brush 已连接', endpoint: `${colmapPath} + ${brushPath}` });
+      }
+      const endpoint = localHealthEndpoint(input.localApiUrl);
+      const health = await fetch(endpoint);
+      if (!health.ok) throw new Error(`本地引擎健康检查失败 HTTP ${health.status}`);
+      return writeJson(response, 200, { message: '本地 Hunyuan3D 已连接', endpoint });
+    } catch (error) { return writeJson(response, 400, { error: error.message }); }
+  }
   if (request.method === 'POST' && url.pathname === '/api/test') {
     const input = await readBody(request);
     const config = { ...(await readConfig()), ...input };
@@ -491,7 +717,7 @@ async function handle(request, response) {
     }
     return writeJson(response, 200, { message: '已发送取消请求。' });
   }
-  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.3.0' });
+  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.5.0' });
   return writeJson(response, 404, { error: 'Not found' });
 }
 
@@ -506,3 +732,4 @@ server.listen(PORT, '127.0.0.1', () => {
     spawn('cmd.exe', ['/c', 'start', '', address], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
   }
 });
+
