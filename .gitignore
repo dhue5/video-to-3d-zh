@@ -1,0 +1,37 @@
+# Python / Blender cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.blend1
+
+# Local secrets and credentials
+.env
+.env.*
+*.env
+*.key
+*.pem
+secrets.*
+credentials.*
+
+# User media and generated outputs
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.blend
+*.glb
+*.gltf
+*.obj
+*.fbx
+outputs/
+work/
+
+# Release archives are attached to GitHub Releases, not committed to the repo
+*.zip
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
