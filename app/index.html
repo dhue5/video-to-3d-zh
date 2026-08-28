@@ -70,9 +70,9 @@
       <div>
         <div class="eyebrow">Local 3D reconstruction workspace</div>
         <h1>VideoTo3D Studio</h1>
-        <p class="subtitle">视频 → 关键帧 → AI 分析 → Blender 可编辑模型</p>
+        <p class="subtitle">视频 → FFmpeg/FFprobe → COLMAP → Brush → final.ply</p>
       </div>
-      <div class="version">v0.3.0 · 本地运行</div>
+      <div class="version">v0.5.0 · 本地运行</div>
     </header>
 
     <div class="grid">
@@ -82,9 +82,16 @@
         <div class="field"><label for="outputRoot">项目输出根目录</label><input id="outputRoot"><div class="hint">默认：C:\\Users\\你的用户名\\Downloads</div></div>
         <div class="two">
           <div class="field"><label for="quality">质量档位</label><select id="quality"><option value="FAST">快速 · 8 张</option><option value="BALANCED" selected>均衡 · 12 张</option><option value="DETAILED">精细 · 20 张</option></select></div>
-          <div class="field"><label for="outputFormat">输出格式</label><select id="outputFormat"><option value="glb" selected>GLB</option><option value="gltf">glTF</option><option value="obj">OBJ</option><option value="fbx">FBX</option></select></div>
+          <div class="field"><label for="outputFormat">输出格式</label><select id="outputFormat"><option value="ply" selected>PLY（Gaussian Splatting）</option><option value="glb">GLB</option><option value="gltf">glTF</option><option value="obj">OBJ</option><option value="fbx">FBX</option></select></div>
         </div>
-        <div class="field"><label for="blenderPath">Blender 可执行文件</label><input id="blenderPath" placeholder="例如：C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"></div>
+        <div class="field"><label for="engineMode">建模引擎</label><select id="engineMode"><option value="LOCAL_SPLAT" selected>本地 COLMAP + Brush（免 Blender）</option><option value="LOCAL_HUNYUAN">本地 Hunyuan3D 网格（免 Blender）</option><option value="BLENDER">Blender 程序化（兼容旧流程）</option></select><div class="hint">推荐本地 COLMAP + Brush：视频和关键帧留在本机，直接训练 Gaussian Splatting 并输出 final.ply。</div></div>
+        <div id="splatEngineFields">
+          <div class="two"><div class="field"><label for="colmapPath">COLMAP 可执行文件</label><input id="colmapPath" placeholder="colmap 或完整路径"></div><div class="field"><label for="brushPath">Brush 可执行文件</label><input id="brushPath" placeholder="brush 或完整路径"></div></div>
+          <label class="check"><input id="localUseGpu" type="checkbox" checked>启用 COLMAP GPU（Brush 使用可用图形后端）</label>
+          <div class="hint">COLMAP 负责特征、匹配和相机重建；Brush 负责 Gaussian Splatting 训练和 PLY 输出。</div>
+        </div>
+        <div id="hunyuanEngineFields" class="field" style="display:none"><label for="localApiUrl">本地 Hunyuan3D API 地址</label><input id="localApiUrl" placeholder="http://127.0.0.1:8080"><div class="hint">备用网格模式：先启动 Hunyuan3D 的本地 API 服务。</div></div>
+        <div id="blenderEngineFields" class="field" style="display:none"><label for="blenderPath">Blender 可执行文件</label><input id="blenderPath" placeholder="例如：C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"><div class="hint">只有选择 Blender 兼容流程时需要。</div></div>
         <div class="two">
           <div class="field"><label for="ffmpegPath">FFmpeg</label><input id="ffmpegPath" placeholder="ffmpeg"></div>
           <div class="field"><label for="ffprobePath">FFprobe</label><input id="ffprobePath" placeholder="ffprobe"></div>
@@ -93,7 +100,8 @@
       </section>
 
       <section class="panel">
-        <div class="section-title"><h2><span class="num">02</span>外部 AI 接口</h2><span id="keyState" class="status-pill">未配置</span></div>
+        <div class="section-title"><h2><span class="num">02</span>可选：外部 AI 接口</h2><span id="keyState" class="status-pill">未配置</span></div>
+        <div class="hint">本地 Hunyuan3D 模式不需要这里的密钥；只有 Blender 兼容流程会使用外部视觉模型分析关键帧。</div>
         <div class="field"><label for="apiUrl">接口 URL</label><input id="apiUrl" placeholder="https://your-provider.example/v1"><div class="hint">支持填写根地址、/v1、/v1/model 或完整接口，软件会规范到标准路径。</div></div>
         <div class="two">
           <div class="field"><label for="modelName">模型名称</label><input id="modelName" placeholder="填写视觉模型名称"></div>
@@ -101,7 +109,7 @@
         </div>
         <div class="field"><label for="apiKey">接口密钥</label><input id="apiKey" type="password" placeholder="仅当前会话使用"><div class="hint" id="keyHint">密钥不会写入项目文件或仓库。</div></div>
         <label class="check"><input id="rememberKey" type="checkbox">保存密钥到本机 VideoTo3D Studio 设置</label>
-        <div class="actions"><button id="models">读取模型列表</button><button id="test">测试接口</button></div>
+        <div class="actions"><button id="localTest">检查本地引擎</button><button id="models">读取模型列表</button><button id="test">测试外部接口</button></div>
         <div class="field"><label for="modelOptions">模型列表</label><select id="modelOptions"><option value="">尚未读取</option></select></div>
         <div class="hint">模型列表地址：<span id="modelsEndpoint">/v1/models</span></div>
       </section>
@@ -123,14 +131,14 @@
   </div>
   <div id="toast" class="toast"></div>
   <script>
-    const STAGES = [['preparing','准备项目'],['probing','分析视频'],['extracting','抽取关键帧'],['analyzing','AI 分析'],['building','生成模型'],['saving','保存项目'],['exporting','输出模型']];
+    const STAGES = [['preparing','准备项目'],['probing','分析视频'],['extracting','抽取关键帧'],['analyzing','COLMAP 重建'],['building','Brush 训练'],['saving','保存项目'],['exporting','输出模型']];
     const $ = (id) => document.getElementById(id);
     let currentId = null;
     let eventSource = null;
     let startTime = null;
 
     function fields() {
-      return { videoPath:$('videoPath').value.trim(), outputRoot:$('outputRoot').value.trim(), quality:$('quality').value, outputFormat:$('outputFormat').value, blenderPath:$('blenderPath').value.trim(), ffmpegPath:$('ffmpegPath').value.trim(), ffprobePath:$('ffprobePath').value.trim(), apiUrl:$('apiUrl').value.trim(), modelName:$('modelName').value.trim(), apiKey:$('apiKey').value, authType:$('authType').value, rememberKey:$('rememberKey').checked };
+      return { videoPath:$('videoPath').value.trim(), outputRoot:$('outputRoot').value.trim(), quality:$('quality').value, outputFormat:$('outputFormat').value, engineMode:$('engineMode').value, localApiUrl:$('localApiUrl').value.trim(), colmapPath:$('colmapPath').value.trim(), brushPath:$('brushPath').value.trim(), localUseGpu:$('localUseGpu').checked, blenderPath:$('blenderPath').value.trim(), ffmpegPath:$('ffmpegPath').value.trim(), ffprobePath:$('ffprobePath').value.trim(), apiUrl:$('apiUrl').value.trim(), modelName:$('modelName').value.trim(), apiKey:$('apiKey').value, authType:$('authType').value, rememberKey:$('rememberKey').checked };
     }
     async function call(url, options={}) { const response = await fetch(url, {headers:{'content-type':'application/json'}, ...options}); const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败'); return data; }
     function toast(message, error=false) { const node=$('toast'); node.textContent=message; node.className='toast show'+(error?' error':''); clearTimeout(toast.timer); toast.timer=setTimeout(()=>node.className='toast',5000); }
@@ -139,15 +147,18 @@
     function renderState(state) { const percent=Math.max(0,Math.min(100,Number(state.percent||0))); $('barFill').style.width=percent+'%'; $('percent').textContent=percent+'%'; $('stageLabel').textContent=state.stageLabel||'尚未开始'; $('progressMessage').textContent=state.message||'—'; $('projectPath').textContent=state.projectPath||'—'; $('counter').textContent=state.total?`${state.current||0}/${state.total}`:'—'; const elapsed=state.startedAt?Math.max(0,(new Date(state.finishedAt||Date.now())-new Date(state.startedAt))/1000):0; $('elapsed').textContent=elapsed?elapsed.toFixed(1)+' 秒':'—'; const status=state.status||'IDLE'; setStatus($('taskStatus'), status==='RUNNING'?'处理中':status==='COMPLETED'?'已完成':status==='FAILED'?'失败':status==='CANCELLED'?'已取消':'待命', status==='COMPLETED'?'ok':status==='FAILED'?'error':''); drawTimeline(state); $('cancel').disabled=status!=='RUNNING'; $('start').disabled=status==='RUNNING'; }
     function addLog(line) { const node=$('logs'); if(node.textContent==='等待任务开始…') node.textContent=''; node.textContent += (node.textContent?'\n':'')+line; node.scrollTop=node.scrollHeight; }
     async function saveConfig(show=true) { const data=await call('/api/config',{method:'POST',body:JSON.stringify(fields())}); if(data.hasKey){$('keyHint').textContent='本机已有保存的密钥；输入框不会回显密钥。';} setStatus($('keyState'), data.apiUrl&&data.modelName?'已配置':'未配置', data.apiUrl&&data.modelName?'ok':''); if(show) toast('本机设置已保存'); return data; }
-    async function loadConfig() { const data=await call('/api/config'); for(const id of ['apiUrl','modelName','blenderPath','ffmpegPath','ffprobePath','outputRoot','quality','outputFormat','authType']) if(data[id]!==undefined) $(id).value=data[id]; $('rememberKey').checked=Boolean(data.rememberKey); $('apiKey').value=''; $('apiKey').placeholder=data.hasKey?'已保存，留空则继续使用':'仅当前会话使用'; $('keyHint').textContent=data.hasKey?'本机已有保存的密钥；输入框不会回显密钥。':'密钥不会写入项目文件或仓库。'; setStatus($('keyState'), data.apiUrl&&data.modelName?'已配置':'未配置', data.apiUrl&&data.modelName?'ok':''); $('modelsEndpoint').textContent=(data.apiUrl?data.apiUrl.replace(/\/+$/,''):'/v1')+'/v1/models'; }
+    async function loadConfig() { const data=await call('/api/config'); for(const id of ['engineMode','localApiUrl','colmapPath','brushPath','localUseGpu','apiUrl','modelName','blenderPath','ffmpegPath','ffprobePath','outputRoot','quality','outputFormat','authType']) if(data[id]!==undefined) { if($(id).type==='checkbox') $(id).checked=Boolean(data[id]); else $(id).value=data[id]; } $('rememberKey').checked=Boolean(data.rememberKey); $('apiKey').value=''; $('apiKey').placeholder=data.hasKey?'已保存，留空则继续使用':'仅当前会话使用'; $('keyHint').textContent=data.hasKey?'本机已有保存的密钥；输入框不会回显密钥。':'密钥不会写入项目文件或仓库。'; setStatus($('keyState'), data.apiUrl&&data.modelName?'已配置':'未配置', data.apiUrl&&data.modelName?'ok':''); $('modelsEndpoint').textContent=(data.apiUrl?data.apiUrl.replace(/\/+$/,''):'/v1')+'/v1/models'; toggleEngineFields(); }
     async function loadModels() { const data=await call('/api/models',{method:'POST',body:JSON.stringify(fields())}); const select=$('modelOptions'); select.innerHTML='<option value="">选择模型…</option>'+data.models.map(item=>`<option value="${item.id.replace(/"/g,'&quot;')}">${item.id}${item.provider?' · '+item.provider:''}</option>`).join(''); $('modelsEndpoint').textContent=data.endpoint; toast(`已读取 ${data.models.length} 个模型`); }
     async function testApi() { const data=await call('/api/test',{method:'POST',body:JSON.stringify(fields())}); toast(`${data.message}（${data.endpoint}）`); }
+    async function testLocal() { const data=await call('/api/local-test',{method:'POST',body:JSON.stringify(fields())}); toast(`${data.message}（${data.endpoint}）`); }
     function connect(id) { if(eventSource) eventSource.close(); eventSource=new EventSource('/api/events?project='+encodeURIComponent(id)); eventSource.onmessage=(event)=>{ const data=JSON.parse(event.data); if(data.type==='progress'||data.type==='state'){renderState(data.state);} if(data.type==='log'){addLog(data.line);} if(data.type==='done'){renderState(data.state); eventSource.close(); eventSource=null; loadHistory(); if(data.state.status==='COMPLETED') toast('建模完成，结果已写入项目目录'); else if(data.state.status!=='CANCELLED') toast(data.state.message||'任务失败',true); } }; eventSource.onerror=()=>{}; }
-    async function startTask() { const data=fields(); if(!data.videoPath) return toast('请先填写视频完整路径',true); if(!data.blenderPath) return toast('请先填写 Blender 可执行文件路径',true); try { await saveConfig(false); const result=await call('/api/start',{method:'POST',body:JSON.stringify(data)}); currentId=result.id; startTime=Date.now(); $('logs').textContent=''; renderState(result.state); connect(currentId); toast('任务已开始'); } catch(error){toast(error.message,true);} }
+    async function startTask() { const data=fields(); if(!data.videoPath) return toast('请先填写视频完整路径',true); if(data.engineMode==='BLENDER'&&!data.blenderPath) return toast('请先填写 Blender 可执行文件路径',true); if(data.engineMode==='LOCAL_HUNYUAN'&&!data.localApiUrl) return toast('请先填写本地 3D 引擎地址',true); if(data.engineMode==='LOCAL_SPLAT'&&(!data.colmapPath||!data.brushPath)) return toast('请先填写 COLMAP 和 Brush 路径',true); try { await saveConfig(false); const result=await call('/api/start',{method:'POST',body:JSON.stringify(data)}); currentId=result.id; startTime=Date.now(); $('logs').textContent=''; renderState(result.state); connect(currentId); toast('任务已开始'); } catch(error){toast(error.message,true);} }
     async function cancelTask() { if(!currentId) return; try { await call('/api/cancel',{method:'POST',body:JSON.stringify({id:currentId})}); toast('已发送取消请求'); } catch(error){toast(error.message,true);} }
     async function loadHistory() { const data=await call('/api/projects'); if(!data.projects.length){$('history').innerHTML='<div class="empty">暂时没有项目记录。</div>';return;} $('history').innerHTML='<table><thead><tr><th>状态</th><th>项目</th><th>阶段</th><th>时间</th><th>输出</th></tr></thead><tbody>'+data.projects.map(item=>`<tr><td>${item.status||'—'}</td><td title="${item.projectPath||''}">${item.projectPath||'—'}</td><td>${item.stageLabel||'—'}</td><td>${item.finishedAt||item.startedAt||'—'}</td><td>${item.output?.model||'—'}</td></tr>`).join('')+'</tbody></table>'; }
-    $('saveConfig').onclick=()=>saveConfig().catch(error=>toast(error.message,true)); $('models').onclick=()=>loadModels().catch(error=>toast(error.message,true)); $('test').onclick=()=>testApi().catch(error=>toast(error.message,true)); $('start').onclick=startTask; $('cancel').onclick=cancelTask; $('refreshHistory').onclick=()=>loadHistory().catch(error=>toast(error.message,true)); $('modelOptions').onchange=()=>{if($('modelOptions').value)$('modelName').value=$('modelOptions').value;}; $('apiUrl').oninput=()=>{ const value=$('apiUrl').value.trim().replace(/\/+$/,''); $('modelsEndpoint').textContent=(value||'/v1')+'/v1/models'; };
+    function toggleEngineFields() { const mode=$('engineMode').value; $('splatEngineFields').style.display=mode==='LOCAL_SPLAT'?'block':'none'; $('hunyuanEngineFields').style.display=mode==='LOCAL_HUNYUAN'?'block':'none'; $('blenderEngineFields').style.display=mode==='BLENDER'?'block':'none'; }
+    $('saveConfig').onclick=()=>saveConfig().catch(error=>toast(error.message,true)); $('localTest').onclick=()=>testLocal().catch(error=>toast(error.message,true)); $('models').onclick=()=>loadModels().catch(error=>toast(error.message,true)); $('test').onclick=()=>testApi().catch(error=>toast(error.message,true)); $('start').onclick=startTask; $('cancel').onclick=cancelTask; $('refreshHistory').onclick=()=>loadHistory().catch(error=>toast(error.message,true)); $('modelOptions').onchange=()=>{if($('modelOptions').value)$('modelName').value=$('modelOptions').value;}; $('engineMode').onchange=toggleEngineFields; $('apiUrl').oninput=()=>{ const value=$('apiUrl').value.trim().replace(/\/+$/,''); $('modelsEndpoint').textContent=(value||'/v1')+'/v1/models'; };
     (async()=>{ try { await call('/api/health'); setStatus($('health'),'运行正常','ok'); await loadConfig(); await loadHistory(); } catch(error){setStatus($('health'),'连接失败','error'); toast(error.message,true);} drawTimeline(); })();
   </script>
 </body>
 </html>
+
