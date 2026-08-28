@@ -25,6 +25,8 @@ credentials.*
 *.fbx
 outputs/
 work/
+app/.runtime/
+app/*.log
 
 # Release archives are attached to GitHub Releases, not committed to the repo
 *.zip
