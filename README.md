@@ -1,8 +1,22 @@
-# 视频转 3D 模型（中文 Blender 插件）
+# VideoTo3D Studio：视频转 3D 模型
 
-一个面向 Blender 的中文插件：从视频中抽取关键帧，调用可配置的外部 AI 模型进行物体分析，并在 Blender 中生成可继续编辑的 3D 模型，最后输出 `.blend` 或 `.glb` 等格式。
+一个中文视频转 3D 工作台：从视频中抽取关键帧，调用可配置的外部 AI 模型进行物体分析，并在 Blender 中生成可继续编辑的 3D 模型，最后输出 `.blend` 或 `.glb` 等格式。仓库同时包含桌面软件 MVP 和 Blender 插件。
 
 > 当前版本是“AI 分析 + 程序化可编辑模型”的工作流，适合快速获得物体的主要外形。它不是完整的摄影测量或 3D Gaussian Splatting 引擎。
+
+## 桌面软件（推荐入口）
+
+`app/` 是一个无需安装 npm 依赖的本地桌面工作台，采用 OOOSplat 风格的项目化流程：新建项目、抽帧、AI 分析、Blender 重建、导出和查看日志。它可以处理手表、产品、家具、零件等一般物体，不局限于视频中的手表。
+
+启动要求：Windows、Node.js 22+、Blender 5.2+、FFmpeg/FFprobe。双击 `app/start_video_to_3d.bat`，或在终端执行：
+
+```powershell
+node app/server.mjs
+```
+
+软件会打开本机页面 `http://127.0.0.1:43120`。设置保存在 `%LOCALAPPDATA%\\VideoTo3DStudio\\settings.json`；只有用户主动勾选保存密钥时才保存密钥，仓库和发布包不含任何 API 密钥。完整说明见 [app/README.md](app/README.md)。
+
+软件支持 `/v1/models` 和 `/v1/chat/completions`，可填写 API 地址、密钥和模型名称；地址会自动规范到 `/v1`。每个项目会保存视频信息、关键帧、AI 建模参数、状态、日志以及 `.blend`/`.glb` 等输出，默认输出到 Windows `下载` 文件夹。
 
 ## 功能
 
@@ -28,6 +42,14 @@
 ![模型背面预览](docs/images/model-back.png)
 
 ## 安装
+
+### 桌面软件
+
+1. 下载 GitHub Releases 中的 `video_to_3d_studio-v0.3.0.zip` 并解压。
+2. 安装 Node.js 22+、FFmpeg/FFprobe 和 Blender 5.2+。
+3. 双击 `app/start_video_to_3d.bat`，按页面提示填写本机程序路径和外部模型接口。
+
+### Blender 插件
 
 1. 下载 GitHub Releases 中的 `video_to_3d_zh-v0.2.0.zip`。
 2. 打开 Blender，进入 **编辑 > 偏好设置 > 插件**。
@@ -109,6 +131,5 @@
 
 ## 版本
 
-当前首个开源发布版本：`v0.2.0`。
-
+当前软件发布版本：`v0.3.0`；Blender 插件版本：`v0.2.0`。
 
