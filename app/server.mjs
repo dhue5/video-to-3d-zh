@@ -213,7 +213,7 @@ function runProcess(task, command, args, options = {}) {
         const text = chunk.toString();
         if (isError) stderr += text;
         else stdout += text;
-        const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const lines = text.split(/[\r\n]+/).map((line) => line.trim()).filter(Boolean);
         for (const line of lines) {
           if (options.onLine) options.onLine(line, isError);
           else appendLog(task, line, isError ? 'stderr' : 'stdout');
@@ -362,7 +362,7 @@ async function createTask(options) {
   };
   tasks.set(id, task);
   await fs.writeFile(path.join(projectPath, 'project.json'), JSON.stringify({
-    app: 'video-to-3d-studio', version: '0.5.0', id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath,
+    app: 'video-to-3d-studio', version: '0.5.1', id, videoPath: sourcePath, originalVideoPath: videoPath, projectPath,
     engineMode: options.engineMode, quality: options.quality, outputFormat: options.outputFormat, createdAt: task.state.startedAt,
   }, null, 2), 'utf8');
   await writeState(task);
@@ -501,13 +501,13 @@ async function runColmap(task, colmapPath, framePaths, useGpu) {
   await setStage(task, 'analyzing', 48, 'COLMAP 正在提取特征');
   await runProcess(task, colmapPath, [
     'feature_extractor', '--database_path', databasePath, '--image_path', imageRoot,
-    '--ImageReader.single_camera', '1', '--SiftExtraction.use_gpu', useGpu ? '1' : '0',
+    '--ImageReader.single_camera', '1', '--FeatureExtraction.use_gpu', useGpu ? '1' : '0',
   ], { onLine: (line) => appendLog(task, line, 'colmap') });
   await setStage(task, 'analyzing', 58, 'COLMAP 正在进行顺序匹配');
   await runProcess(task, colmapPath, [
     'sequential_matcher', '--database_path', databasePath,
     '--SequentialMatching.overlap', String(Math.min(20, Math.max(5, Math.round(framePaths.length / 3)))),
-    '--SiftMatching.use_gpu', useGpu ? '1' : '0',
+    '--FeatureMatching.use_gpu', useGpu ? '1' : '0',
   ], { onLine: (line) => appendLog(task, line, 'colmap') });
   await setStage(task, 'analyzing', 66, 'COLMAP 正在重建相机位姿');
   await runProcess(task, colmapPath, [
@@ -531,29 +531,48 @@ async function runBrush(task, brushPath, dataset, useGpu) {
   const quality = QUALITY[task.options.quality] || QUALITY.BALANCED;
   const totalSteps = quality === QUALITY.FAST ? 8000 : quality === QUALITY.DETAILED ? 30000 : 15000;
   const maxResolution = quality === QUALITY.FAST ? 1200 : quality === QUALITY.DETAILED ? 2000 : 1600;
+  const exportEvery = Math.max(1000, Math.ceil(totalSteps / 4));
+  const expectedExports = Math.ceil(totalSteps / exportEvery);
   await setStage(task, 'building', 72, `${useGpu ? 'GPU' : 'CPU'} Brush 正在训练 Gaussian Splatting`);
-  await runProcess(task, brushPath, [
-    dataset.colmapRoot,
-    '--total-steps', String(totalSteps),
-    '--max-resolution', String(maxResolution),
-    '--max-splats', '7000000',
-    '--export-every', String(totalSteps),
-    '--export-path', outputDir,
-    '--export-name', 'export_{iter}.ply',
-  ], {
-    onLine: (line) => {
-      const match = line.match(/(?:step|iter|iteration)[^0-9]*(\d+)[^0-9]+(?:of|\/)\s*(\d+)/i);
-      if (match) setStage(task, 'building', 72 + (Number(match[1]) / Number(match[2])) * 20, `Brush 训练中：${match[1]}/${match[2]}`);
-      else appendLog(task, line, 'brush');
-    },
-  });
+  let lastExportCount = -1;
+  let progressTimer;
+  const updateExportProgress = async () => {
+    const names = (await fs.readdir(outputDir)).filter((name) => /\.ply$/i.test(name));
+    const exportCount = names.length;
+    if (exportCount === lastExportCount) return;
+    lastExportCount = exportCount;
+    const completedSteps = Math.min(totalSteps, exportCount * exportEvery);
+    await setStage(task, 'building', 72 + (completedSteps / totalSteps) * 20,
+      `Brush 训练中：约 ${completedSteps}/${totalSteps} 步`, completedSteps, totalSteps);
+  };
+  progressTimer = setInterval(() => { updateExportProgress().catch(() => {}); }, 1000);
+  try {
+    await runProcess(task, brushPath, [
+      dataset.colmapRoot,
+      '--total-steps', String(totalSteps),
+      '--max-resolution', String(maxResolution),
+      '--max-splats', '7000000',
+      '--export-every', String(exportEvery),
+      '--export-path', outputDir,
+      '--export-name', 'export_{iter}.ply',
+    ], {
+      onLine: (line) => {
+        const match = line.match(/(?:step|iter|iteration)[^0-9]*(\d+)[^0-9]+(?:of|\/)\s*(\d+)/i);
+        if (match) setStage(task, 'building', 72 + (Number(match[1]) / Number(match[2])) * 20, `Brush 训练中：${match[1]}/${match[2]}`, Number(match[1]), Number(match[2]));
+        else appendLog(task, line, 'brush');
+      },
+    });
+  } finally {
+    clearInterval(progressTimer);
+  }
   const exports = (await fs.readdir(outputDir)).filter((name) => /\.ply$/i.test(name)).sort();
   if (!exports.length) throw new Error('Brush 没有导出 PLY 文件，请检查 GPU/图形后端和数据集。');
   const source = path.join(outputDir, exports[exports.length - 1]);
   const finalPath = path.join(task.projectPath, 'outputs', 'final.ply');
+  await setStage(task, 'building', 93, `Brush 训练完成：${totalSteps}/${totalSteps} 步`, totalSteps, totalSteps);
   await fs.copyFile(source, finalPath);
   await fs.writeFile(path.join(brushRoot, 'training.json'), JSON.stringify({
-    totalSteps, maxResolution, useGpu: Boolean(useGpu), source, finalPath,
+    totalSteps, maxResolution, exportEvery, expectedExports, useGpu: Boolean(useGpu), source, finalPath,
   }, null, 2), 'utf8');
   return { model: finalPath, engine: 'LOCAL_SPLAT', format: 'ply', brushOutput: source };
 }
@@ -717,7 +736,7 @@ async function handle(request, response) {
     }
     return writeJson(response, 200, { message: '已发送取消请求。' });
   }
-  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.5.0' });
+  if (request.method === 'GET' && url.pathname === '/api/health') return writeJson(response, 200, { ok: true, app: 'video-to-3d-studio', version: '0.5.1' });
   return writeJson(response, 404, { error: 'Not found' });
 }
 
@@ -732,4 +751,3 @@ server.listen(PORT, '127.0.0.1', () => {
     spawn('cmd.exe', ['/c', 'start', '', address], { detached: true, windowsHide: true, stdio: 'ignore' }).unref();
   }
 });
-
