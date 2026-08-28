@@ -1,5 +1,20 @@
 # 更新日志
 
+## v0.5.0 — COLMAP + Brush 本地核心流水线
+
+- 将本地默认建模核心改为 `FFmpeg/FFprobe → COLMAP → Brush`。
+- 增加 COLMAP 特征提取、顺序匹配、相机位姿重建和 sparse 数据集准备。
+- 增加 Brush CLI 训练参数、GPU 开关、训练进度解析和 `outputs/final.ply` 发布。
+- 默认不依赖 Blender；保留 Hunyuan3D 网格和 Blender 兼容模式。
+- 增强本地引擎检查，启动前可检查 COLMAP 与 Brush。
+
+## v0.4.0 — 本地建模模式
+
+- 增加本地 Hunyuan3D API 建模引擎，默认不依赖 Blender。
+- 增加本地引擎地址、健康检查和网格模型直接输出。
+- 保留 Blender 程序化兼容模式，外部视觉模型接口仅在该模式使用。
+- 调整桌面软件文档和发布包说明。
+
 ## v0.3.0 — VideoTo3D Studio 桌面软件 MVP
 
 - 增加无需 npm 依赖的本地桌面工作台和中文浏览器界面。
